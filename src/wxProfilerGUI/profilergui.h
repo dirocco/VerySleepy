@@ -77,6 +77,8 @@ public:
 	wxString symCacheDir;
 	wxString symServer;
 	int throttle;
+	
+	bool showGUI;
 };
 
 /*=====================================================================

@@ -275,7 +275,7 @@ bool ProfilerGUI::LaunchProfiler(const AttachInfo *info, std::wstring &output_fi
 	bool aborted = false;
 	{
 		CaptureWin *captureWin = new CaptureWin;
-		captureWin->Show();
+		captureWin->Show(prefs.showGUI);
 		captureWin->Update();
 
 		wxStopWatch timer;
@@ -301,13 +301,16 @@ bool ProfilerGUI::LaunchProfiler(const AttachInfo *info, std::wstring &output_fi
 	profilerthread->commit_suicide = true;
 
 	{
-		wxProgressDialog dlg("Sleepy", "Please wait while symbols are queried...", 100);
-		while(true)
+		if( prefs.showGUI )
 		{
-			int percent = profilerthread->getSymbolsPercent();
-			if (percent >= 100 || profilerthread->getFailed())
-				break;
-			WaitForSingleObject(profilerthread->getHandle(), 100);
+			wxProgressDialog dlg("Sleepy", "Please wait while symbols are queried...", 100);
+			while(true)
+			{
+				int percent = profilerthread->getSymbolsPercent();
+				if (percent >= 100 || profilerthread->getFailed())
+					break;
+				WaitForSingleObject(profilerthread->getHandle(), 100);
+			}
 		}
 		WaitForSingleObject(profilerthread->getHandle(), INFINITE);
 	}
@@ -414,7 +417,7 @@ bool ProfilerGUI::LoadProfileData(const std::wstring &filename)
 
 	MainWin *frame = new MainWin(_T("Sleepy"), filename, database);
 
-	frame->Show(TRUE);
+	frame->Show(prefs.showGUI);
 	frame->Update();
 	frame->Reset();
 	return true;
@@ -479,6 +482,8 @@ bool ProfilerGUI::OnInit()
 		return false;
 
 	sleepy_icon = wxICON(sleepy);
+
+	prefs.showGUI = true;
 
 	if (!wxApp::OnInit())
 		return false;
@@ -559,6 +564,8 @@ bool ProfilerGUI::OnCmdLineParsed(wxCmdLineParser& parser)
 {
 	wxString param;
 	std::wstring run_cmd, tmp_filename;
+
+	prefs.showGUI = false;
 
 	if (parser.Found("q"))
 		wxLog::EnableLogging(false);
