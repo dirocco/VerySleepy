@@ -70,6 +70,8 @@ public:
 	const std::wstring &getFilename() const { return filename; }
 	void setPaused(bool paused_) { paused = paused_; }
 
+	bool addNewThread( HANDLE target_process, HANDLE target_thread );
+
 	void sample(SAMPLE_TYPE timeSpent);//for internal use.
 private:
 	//std::wstring demangleProcName(const std::wstring& mangled_name);

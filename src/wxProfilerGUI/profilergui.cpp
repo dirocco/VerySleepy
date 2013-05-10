@@ -29,12 +29,15 @@ http://www.gnu.org/copyleft/gpl.html.
 #include "threadpicker.h"
 #include "capturewin.h"
 #include "mainwin.h"
+#include "../utils/mythread.h"
 #include "../utils/dbginterface.h"
 #include "../profiler/profilerthread.h"
 #include "../utils/stringutils.h"
 #include "../utils/osutils.h"
 #include <wx/stdpaths.h>
 #include "crashback.h"
+
+#include "../../include/sleepy/sleepy.h"
 
 // DE: 20090325 Linking fails in debug target under visual studio 2005
 // RJM: works for me :-/
@@ -56,6 +59,7 @@ static const wxCmdLineEntryDesc g_cmdLineDesc[] =
 	{ wxCMD_LINE_OPTION, "o", "", "Saves the captured profile to the given file.",			wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL|wxCMD_LINE_NEEDS_SEPARATOR },
 	{ wxCMD_LINE_OPTION, "t", "", "Stops capturing automatically after N seconds time.",	wxCMD_LINE_VAL_NUMBER, wxCMD_LINE_PARAM_OPTIONAL },
 	{ wxCMD_LINE_SWITCH, "q", "", "Quiet mode (no error messages will be shown).",			wxCMD_LINE_VAL_NONE },
+	{ wxCMD_LINE_SWITCH, "s", "", "Application threads will actively subscribe for profiling", wxCMD_LINE_VAL_NONE },
 	{ wxCMD_LINE_PARAM, NULL, NULL, "Loads an existing profile from a file.",				wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL},
 
 	{ wxCMD_LINE_NONE }
@@ -71,6 +75,7 @@ wxConfig config(APPNAME L" " VERSION, VENDORNAME);
 ProfilerGUI::ProfilerGUI()
 {
 	initialized = false;
+	NamedPipe = NULL;
 }
 
 
@@ -353,7 +358,71 @@ AttachInfo::~AttachInfo()
 		delete sym_info;
 }
 
-AttachInfo *ProfilerGUI::RunProcess(std::wstring run_cmd,std::wstring run_cwd)
+class ProfilerGUI::NamedPipeServerThread : public MyThread
+{
+public:
+	NamedPipeServerThread( ProfilerGUI* gui )
+	: gui( gui )
+	{
+	}
+
+	void run()
+	{
+		
+		while(true)
+		{
+			char pipename[MAX_PATH] = {0};
+			_snprintf(pipename, MAX_PATH - 1, "\\\\.\\pipe\\SleepyPipe-%d", gui->pi.dwProcessId);
+
+				gui->NamedPipe = CreateNamedPipeA(pipename, 
+					PIPE_ACCESS_INBOUND, 
+					PIPE_TYPE_MESSAGE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
+					PIPE_UNLIMITED_INSTANCES, 
+					64 * 1024,
+					64 * 1024, 
+					INFINITE,
+					NULL);
+
+			if(gui->NamedPipe == NULL || gui->NamedPipe == INVALID_HANDLE_VALUE)
+			{
+				int err = GetLastError();
+				wxLogSysError("Unable to create pipe");
+				
+				printf("Unable to create pipe: %d\n", GetLastError() );
+			}
+
+			BOOL result = ConnectNamedPipe(gui->NamedPipe, NULL);
+			if(!result)
+			{
+				int err = GetLastError();
+				printf("Failed to connect on named pipe: %d\n", GetLastError());
+				return;
+			}
+
+			SleepyMessage msg = {0};
+			DWORD bytes_read = 0;
+			result = ReadFile(gui->NamedPipe, &msg, sizeof(SleepyMessage), &bytes_read, NULL);
+			if(!result)
+			{
+				int err = GetLastError();
+				OutputDebugStringA("Readfile failed\n");
+				break;
+			}
+			else
+			{
+				// TODO: add profiler thread here
+
+				char buf[512] = {0};
+				_snprintf_s( buf, 512, 512, "got threadId: %d\n", msg.threadId );
+				OutputDebugStringA(buf);
+			}
+		}
+	}
+
+	ProfilerGUI* gui;
+};
+
+AttachInfo *ProfilerGUI::RunProcess(std::wstring run_cmd,std::wstring run_cwd, bool create_pipe)
 {
 	wchar_t *cmdName = wcsdup(run_cmd.c_str());
 	wchar_t *cmdCwd = NULL;
@@ -361,7 +430,7 @@ AttachInfo *ProfilerGUI::RunProcess(std::wstring run_cmd,std::wstring run_cwd)
 		cmdCwd = wcsdup(run_cwd.c_str());
 	}
 	STARTUPINFO si;
-	PROCESS_INFORMATION pi;
+	/*PROCESS_INFORMATION pi;*/
 	ZeroMemory( &si, sizeof(si) );
 	ZeroMemory( &pi, sizeof(pi) );
 	si.cb = sizeof(si);
@@ -376,6 +445,12 @@ AttachInfo *ProfilerGUI::RunProcess(std::wstring run_cmd,std::wstring run_cwd)
 	free(cmdName);
 	if(cmdCwd) {
 		free(cmdCwd);
+	}
+
+	if( create_pipe )
+	{
+		namedPipeServerThread = new NamedPipeServerThread( this );
+		namedPipeServerThread->launch( true, THREAD_PRIORITY_NORMAL );
 	}
 
 	AttachInfo *output = new AttachInfo;
@@ -565,10 +640,11 @@ bool ProfilerGUI::OnCmdLineParsed(wxCmdLineParser& parser)
 	wxString param;
 	std::wstring run_cmd, tmp_filename;
 
-	prefs.showGUI = false;
-
 	if (parser.Found("q"))
+	{
+		prefs.showGUI = false;
 		wxLog::EnableLogging(false);
+	}
 
 	if (parser.Found("r") && parser.Found("i"))
 	{
@@ -585,11 +661,13 @@ bool ProfilerGUI::OnCmdLineParsed(wxCmdLineParser& parser)
 	if (!parser.Found("t", &cmdline_timeout))
 		cmdline_timeout = 0;
 
+	bool create_pipe = parser.Found("s");
+	
 	if (parser.Found("r", &param))
 	{
 		run_cmd = param.c_str();
 
-		AttachInfo *info = RunProcess(run_cmd, L"");
+		AttachInfo *info = RunProcess(run_cmd, L"", create_pipe);
 		if ( !info )
 			return false;
 

@@ -100,16 +100,22 @@ public:
 
 	virtual wxAppTraits *CreateTraits();
 
+	HANDLE NamedPipe;
+	PROCESS_INFORMATION pi;
+
 protected:
 	virtual void OnInitCmdLine(wxCmdLineParser& parser);
 	virtual bool OnCmdLineParsed(wxCmdLineParser& parser);
 
 	bool LaunchProfiler(const AttachInfo *info, std::wstring &output_filename);
-	AttachInfo *RunProcess(std::wstring run_cmd,std::wstring run_cwd);
+	AttachInfo *RunProcess(std::wstring run_cmd,std::wstring run_cwd, bool create_pipe = false);
 	bool LoadProfileData(const std::wstring &filename);
 	std::wstring ObtainProfileData();
 
 	bool initialized;
+
+	class NamedPipeServerThread;
+	NamedPipeServerThread* namedPipeServerThread;
 };
 
 DECLARE_APP(ProfilerGUI)

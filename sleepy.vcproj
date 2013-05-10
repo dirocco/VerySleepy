@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="Windows-1252"?>
 <VisualStudioProject
 	ProjectType="Visual C++"
-	Version="9,00"
+	Version="9.00"
 	Name="sleepy"
 	ProjectGUID="{E3D8AA66-3F5A-46C9-AAB2-34D3CE44E5DC}"
 	RootNamespace="sleepy"
@@ -552,6 +552,14 @@
 			</File>
 			<File
 				RelativePath=".\src\wxProfilerGUI\threadpicker.h"
+				>
+			</File>
+		</Filter>
+		<Filter
+			Name="sleepy"
+			>
+			<File
+				RelativePath=".\include\sleepy\sleepy.h"
 				>
 			</File>
 		</Filter>

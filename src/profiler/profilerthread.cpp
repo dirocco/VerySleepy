@@ -61,6 +61,17 @@ ProfilerThread::~ProfilerThread()
 {
 }
 
+bool ProfilerThread::addNewThread( HANDLE target_process, HANDLE target_thread )
+{
+	setPaused( true );  // TODO: Probably want to lock this for real
+	Sleep( 200 ); // this is awful
+
+	profilers.push_back( Profiler( target_process, target_thread, callstacks, flatcounts ) );
+	numThreadsRunning = (int)profilers.size();
+
+	setPaused( false );
+	return true;
+}
 
 void ProfilerThread::sample(SAMPLE_TYPE timeSpent)
 {
