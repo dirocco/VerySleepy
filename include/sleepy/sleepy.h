@@ -1,14 +1,14 @@
-#ifndef SLEEPY_H
-#define SLEEPY_H
+#ifndef __SLEEPY_H__
+#define __SLEEPY_H__
 
-void SleepySubscribeThisThread();
-void SleepyUnsubscribeThisThread();
+bool SleepySubscribeThisThread();
+bool SleepyUnsubscribeThisThread();
 
 
 // The rest of this file can be put in a cpp if you prefer
 
-#define SLEEPY_SUBSCRIBE_MESSAGE_TYPE 0x01
-#define SLEEPY_UNSUBSCRIBE_MESSAGE_TYPE 0x02
+#define SLEEPY_SUBSCRIBE_MESSAGE_TYPE		1
+#define SLEEPY_UNSUBSCRIBE_MESSAGE_TYPE		2
 
 #pragma pack( push )
 #pragma pack( 1 )
@@ -33,7 +33,7 @@ struct SleepyMessage
 #undef WIN32_LEAN_AND_MEAN
 #endif
 
-void SleepySendMessage(SleepyMessage* message)
+bool SleepySendMessage(SleepyMessage* message)
 {
 	char pipename[MAX_PATH] = {0};
 	_snprintf_s(pipename, MAX_PATH - 1, MAX_PATH - 1, "\\\\.\\pipe\\SleepyPipe-%d", GetCurrentProcessId());
@@ -55,15 +55,15 @@ void SleepySendMessage(SleepyMessage* message)
 		int err = GetLastError();
 		if(err != ERROR_PIPE_BUSY)
 		{
-			fprintf(stderr, "Sleepy subscription open pipe failed: %d\n", err);
-			return;
+			fprintf(stderr, "Sleepy send message open pipe failed: %d\n", err);
+			return false;
 		}
 
-		if(!WaitNamedPipeA(pipename, 10000))
+		if(!WaitNamedPipeA(pipename, 1000))
 		{
 			err = GetLastError();
-			fprintf(stderr, "Sleepy subscription wait for pipe failed: %d\n", err);
-			return;
+			fprintf(stderr, "Sleepy send message wait for pipe failed: %d, retrying\n", err);
+			continue;
 		}
 	}
 
@@ -72,31 +72,29 @@ void SleepySendMessage(SleepyMessage* message)
 	if(!result)
 	{
 		fprintf(stderr, "Sleepy subscription write failed: %d\n", GetLastError());
-		return;
+		return false;
 	}
 
 	CloseHandle(pipe);
+	return true;
 }
 
-void SleepySubscribeThisThread()
+bool SleepySubscribeThisThread()
 {
 	SleepyMessage msg;
 	msg.messageType = SLEEPY_SUBSCRIBE_MESSAGE_TYPE;
 	msg.threadId = GetCurrentThreadId();
 
-	SleepySendMessage(&msg);
+	return SleepySendMessage(&msg);
 }
 
-void SleepyUnsubscribeThisThread()
+bool SleepyUnsubscribeThisThread()
 {
 	SleepyMessage msg;
 	msg.messageType = SLEEPY_UNSUBSCRIBE_MESSAGE_TYPE;
 	msg.threadId = GetCurrentThreadId();
 
-	SleepySendMessage(&msg);
+	return SleepySendMessage(&msg);
 }
-
-#undef SLEEPY_SUBSCRIBE_MESSAGE_TYPE
-#undef SLEEPY_UNSUBSCRIBE_MESSAGE_TYPE
 
 #endif

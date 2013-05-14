@@ -29,6 +29,8 @@ http://www.gnu.org/copyleft/gpl.html..
 #include <wx/txtstrm.h>
 
 #include "../utils/stringutils.h"
+#include "../utils/scopedlock.h"
+#include "../utils/dbgprintf.h"
 #include <fstream>
 #include <assert.h>
 #include <algorithm>
@@ -54,22 +56,35 @@ ProfilerThread::ProfilerThread(HANDLE target_process_, const std::vector<HANDLE>
 	numThreadsRunning = (int)target_threads.size();
 
 	filename = wxFileName::CreateTempFileName(wxEmptyString);
+
+	InitializeCriticalSection(&profilersLock);
 }
 
 
 ProfilerThread::~ProfilerThread()
 {
+	DeleteCriticalSection(&profilersLock);
 }
 
 bool ProfilerThread::addNewThread( HANDLE target_process, HANDLE target_thread )
 {
-	setPaused( true );  // TODO: Probably want to lock this for real
-	Sleep( 200 ); // this is awful
-
+	ScopedLock l(profilersLock);
 	profilers.push_back( Profiler( target_process, target_thread, callstacks, flatcounts ) );
-	numThreadsRunning = (int)profilers.size();
+	
+	return true;
+}
 
-	setPaused( false );
+bool ProfilerThread::removeThread(DWORD target_thread_id )
+{
+	ScopedLock l(profilersLock);
+
+	for(std::vector<Profiler>::iterator it = profilers.begin(); it != profilers.end();)
+	{
+		if(GetThreadId(it->getTarget()) == target_thread_id)
+			it = profilers.erase(it);
+		else ++it;
+	}
+
 	return true;
 }
 
@@ -80,7 +95,6 @@ void ProfilerThread::sample(SAMPLE_TYPE timeSpent)
 	//      to re-schedule, and if we did them in sequence, it'll always schedule the first one.
 	//      This starves the other N-1 threads. For lack of a better option, using a shuffle
 	//      at least re-schedules them evenly.
-
 	size_t count = profilers.size();
 	if ( count == 0)
 		return;
@@ -124,6 +138,14 @@ public:
 	}
 };
 
+void ProfilerThread::setPaused(bool paused)
+{
+	if( paused )
+		EnterCriticalSection(&profilersLock);
+	else
+		LeaveCriticalSection(&profilersLock);
+}
+
 void ProfilerThread::sampleLoop()
 {
 	LARGE_INTEGER prev, now, freq;
@@ -135,14 +157,10 @@ void ProfilerThread::sampleLoop()
 	
 	while(!this->commit_suicide)
 	{
-		if (paused)
-		{
-			Sleep(100);
-			continue;
-		}
-
 		int ms = 100 / prefs.throttle;
 		Sleep(ms);
+
+		ScopedLock l(profilersLock);
 
 		QueryPerformanceCounter(&now);
 

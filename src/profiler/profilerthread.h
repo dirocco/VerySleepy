@@ -68,9 +68,10 @@ public:
 	int getSampleProgress() const { return numsamplessofar; }
 	int getSymbolsPercent() const { return symbolsPercent; }
 	const std::wstring &getFilename() const { return filename; }
-	void setPaused(bool paused_) { paused = paused_; }
+	void setPaused(bool paused_); // Must be called off the profiling thread // { paused = paused_; }
 
-	bool addNewThread( HANDLE target_process, HANDLE target_thread );
+	bool addNewThread(HANDLE target_process, HANDLE target_thread);
+	bool removeThread(DWORD target_thread_id );
 
 	void sample(SAMPLE_TYPE timeSpent);//for internal use.
 private:
@@ -86,6 +87,8 @@ private:
 
 	// DE: 20090325 one Profiler instance per thread to profile
 	std::vector<Profiler> profilers;
+	CRITICAL_SECTION profilersLock;
+
 	double duration;
 	//int numsamples;
 	int numsamplessofar;

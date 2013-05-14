@@ -399,6 +399,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\src\utils\dbgprintf.h"
+				>
+			</File>
+			<File
 				RelativePath=".\src\utils\mythread.cpp"
 				>
 			</File>
@@ -412,6 +416,10 @@
 			</File>
 			<File
 				RelativePath=".\src\utils\osutils.h"
+				>
+			</File>
+			<File
+				RelativePath=".\src\utils\scopedlock.h"
 				>
 			</File>
 			<File

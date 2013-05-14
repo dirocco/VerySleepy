@@ -34,6 +34,7 @@ http://www.gnu.org/copyleft/gpl.html.
 #include "../profiler/profilerthread.h"
 #include "../utils/stringutils.h"
 #include "../utils/osutils.h"
+#include "../utils/dbgprintf.h"
 #include <wx/stdpaths.h>
 #include "crashback.h"
 
@@ -59,7 +60,8 @@ static const wxCmdLineEntryDesc g_cmdLineDesc[] =
 	{ wxCMD_LINE_OPTION, "o", "", "Saves the captured profile to the given file.",			wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL|wxCMD_LINE_NEEDS_SEPARATOR },
 	{ wxCMD_LINE_OPTION, "t", "", "Stops capturing automatically after N seconds time.",	wxCMD_LINE_VAL_NUMBER, wxCMD_LINE_PARAM_OPTIONAL },
 	{ wxCMD_LINE_SWITCH, "q", "", "Quiet mode (no error messages will be shown).",			wxCMD_LINE_VAL_NONE },
-	{ wxCMD_LINE_SWITCH, "s", "", "Application threads will actively subscribe for profiling", wxCMD_LINE_VAL_NONE },
+	{ wxCMD_LINE_SWITCH, "s", "", "Application threads will subscribe for profiling",		wxCMD_LINE_VAL_NONE },
+	{ wxCMD_LINE_SWITCH, "g", "", "Hide GUI",												wxCMD_LINE_VAL_NONE },
 	{ wxCMD_LINE_PARAM, NULL, NULL, "Loads an existing profile from a file.",				wxCMD_LINE_VAL_STRING, wxCMD_LINE_PARAM_OPTIONAL},
 
 	{ wxCMD_LINE_NONE }
@@ -76,6 +78,7 @@ ProfilerGUI::ProfilerGUI()
 {
 	initialized = false;
 	NamedPipe = NULL;
+	namedPipeServerThread = NULL;
 }
 
 
@@ -261,6 +264,100 @@ wxString ProfilerGUI::PromptOpen(wxWindow *parent)
 		return wxEmptyString;
 }
 
+class ProfilerGUI::NamedPipeServerThread : public MyThread
+{
+public:
+	ProfilerThread* profilerThread;
+
+	NamedPipeServerThread(ProfilerGUI* gui)
+	: gui(gui), profilerThread(NULL)
+	{
+	}
+
+	void run()
+	{
+		
+		while(true)
+		{
+			char pipename[MAX_PATH] = {0};
+			_snprintf(pipename, MAX_PATH - 1, "\\\\.\\pipe\\SleepyPipe-%d", gui->pi.dwProcessId);
+
+			gui->NamedPipe = CreateNamedPipeA(pipename, 
+				PIPE_ACCESS_INBOUND, 
+				PIPE_TYPE_MESSAGE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
+				PIPE_UNLIMITED_INSTANCES, 
+				64 * 1024,
+				64 * 1024, 
+				INFINITE,
+				NULL);
+
+			if(gui->NamedPipe == NULL || gui->NamedPipe == INVALID_HANDLE_VALUE)
+			{
+				wxLogSysError("Unable to create pipe");
+				
+				int err = GetLastError();
+				dbgprintf("Unable to create pipe: %d\n", GetLastError() );
+			}
+
+			BOOL result = ConnectNamedPipe(gui->NamedPipe, NULL);
+			if(!result)
+			{
+				wxLogSysError("Failed to connect on named pipe");
+
+				int err = GetLastError();
+				dbgprintf("Failed to connect on named pipe: %d\n", GetLastError());
+
+				continue;
+			}
+
+			SleepyMessage msg = {0};
+			DWORD bytes_read = 0;
+			result = ReadFile(gui->NamedPipe, &msg, sizeof(SleepyMessage), &bytes_read, NULL);
+			if(!result)
+			{
+				wxLogSysError("Read message from child process failed");
+
+				int err = GetLastError();
+				dbgprintf("Readfile failed %d\n", err);
+
+				continue;
+			}
+			else
+			{
+				if(!profilerThread)
+					dbgprintf("Waiting for profiler thread\n");
+
+				while(!profilerThread)
+					Sleep(100);
+
+				HANDLE threadHandle = OpenThread( THREAD_ALL_ACCESS, FALSE, msg.threadId );
+
+				if(threadHandle == NULL)
+				{
+					wxLogSysError("Couldn't open thread handle");
+					dbgprintf("Couldn't open thread handle %d: %d\n", msg.threadId, GetLastError() );
+					continue;
+				}
+
+				switch(msg.messageType)
+				{
+				case SLEEPY_SUBSCRIBE_MESSAGE_TYPE:
+					profilerThread->addNewThread(gui->pi.hProcess, threadHandle);
+					break;
+				case SLEEPY_UNSUBSCRIBE_MESSAGE_TYPE:
+					profilerThread->removeThread(msg.threadId);
+					break;
+				default:
+					wxLogSysError("Sleepy message formatting error");
+					continue;
+				}
+			}
+		}
+	}
+
+	ProfilerGUI* gui;
+};
+
 bool ProfilerGUI::LaunchProfiler(const AttachInfo *info, std::wstring &output_filename)
 {
 	//------------------------------------------------------------------------
@@ -282,11 +379,13 @@ bool ProfilerGUI::LaunchProfiler(const AttachInfo *info, std::wstring &output_fi
 		CaptureWin *captureWin = new CaptureWin;
 		captureWin->Show(prefs.showGUI);
 		captureWin->Update();
-
+		
 		wxStopWatch timer;
 		timer.Start();
 
 		profilerthread->launch(false, THREAD_PRIORITY_TIME_CRITICAL);
+		if(namedPipeServerThread)
+			namedPipeServerThread->profilerThread = profilerthread;
 
 		while(captureWin->UpdateProgress(profilerthread->getSampleProgress(), profilerthread->getNumThreadsRunning()))
 		{
@@ -358,70 +457,6 @@ AttachInfo::~AttachInfo()
 		delete sym_info;
 }
 
-class ProfilerGUI::NamedPipeServerThread : public MyThread
-{
-public:
-	NamedPipeServerThread( ProfilerGUI* gui )
-	: gui( gui )
-	{
-	}
-
-	void run()
-	{
-		
-		while(true)
-		{
-			char pipename[MAX_PATH] = {0};
-			_snprintf(pipename, MAX_PATH - 1, "\\\\.\\pipe\\SleepyPipe-%d", gui->pi.dwProcessId);
-
-				gui->NamedPipe = CreateNamedPipeA(pipename, 
-					PIPE_ACCESS_INBOUND, 
-					PIPE_TYPE_MESSAGE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
-					PIPE_UNLIMITED_INSTANCES, 
-					64 * 1024,
-					64 * 1024, 
-					INFINITE,
-					NULL);
-
-			if(gui->NamedPipe == NULL || gui->NamedPipe == INVALID_HANDLE_VALUE)
-			{
-				int err = GetLastError();
-				wxLogSysError("Unable to create pipe");
-				
-				printf("Unable to create pipe: %d\n", GetLastError() );
-			}
-
-			BOOL result = ConnectNamedPipe(gui->NamedPipe, NULL);
-			if(!result)
-			{
-				int err = GetLastError();
-				printf("Failed to connect on named pipe: %d\n", GetLastError());
-				return;
-			}
-
-			SleepyMessage msg = {0};
-			DWORD bytes_read = 0;
-			result = ReadFile(gui->NamedPipe, &msg, sizeof(SleepyMessage), &bytes_read, NULL);
-			if(!result)
-			{
-				int err = GetLastError();
-				OutputDebugStringA("Readfile failed\n");
-				break;
-			}
-			else
-			{
-				// TODO: add profiler thread here
-
-				char buf[512] = {0};
-				_snprintf_s( buf, 512, 512, "got threadId: %d\n", msg.threadId );
-				OutputDebugStringA(buf);
-			}
-		}
-	}
-
-	ProfilerGUI* gui;
-};
-
 AttachInfo *ProfilerGUI::RunProcess(std::wstring run_cmd,std::wstring run_cwd, bool create_pipe)
 {
 	wchar_t *cmdName = wcsdup(run_cmd.c_str());
@@ -492,7 +527,7 @@ bool ProfilerGUI::LoadProfileData(const std::wstring &filename)
 
 	MainWin *frame = new MainWin(_T("Sleepy"), filename, database);
 
-	frame->Show(prefs.showGUI);
+	frame->Show();
 	frame->Update();
 	frame->Reset();
 	return true;
@@ -597,18 +632,6 @@ void ProfilerGUI::OnEventLoopEnter(wxEventLoopBase *loop)
 		return;
 	}
 
-	if (!cmdline_save.empty())
-	{
-		if (!CopyFile(filename.c_str(), cmdline_save.c_str(), FALSE))
-		{
-			wxLogSysError("Could not save profile data.");
-			loop->Exit(1);
-			return;
-		}
-
-		return;
-	}
-
 	if (!LoadProfileData(filename))
 	{
 		loop->Exit(1);
@@ -641,10 +664,10 @@ bool ProfilerGUI::OnCmdLineParsed(wxCmdLineParser& parser)
 	std::wstring run_cmd, tmp_filename;
 
 	if (parser.Found("q"))
-	{
-		prefs.showGUI = false;
 		wxLog::EnableLogging(false);
-	}
+
+	if (parser.Found("g"))
+		prefs.showGUI = false;
 
 	if (parser.Found("r") && parser.Found("i"))
 	{
@@ -679,7 +702,13 @@ bool ProfilerGUI::OnCmdLineParsed(wxCmdLineParser& parser)
 			return false;
 
 		cmdline_load = tmp_filename;
+
+		if (!cmdline_save.empty())
+		{
+			if (!CopyFile(tmp_filename.c_str(), cmdline_save.c_str(), FALSE))
+				wxLogSysError("Could not save profile data.");
+		}
 	}
 
-	return true;
+	return prefs.showGUI; // bool continue
 }

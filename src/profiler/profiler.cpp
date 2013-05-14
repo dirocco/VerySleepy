@@ -26,6 +26,7 @@ http://www.gnu.org/copyleft/gpl.html..
 
 #include "../utils/stringutils.h"
 #include "../utils/osutils.h"
+#include "../utils/dbgprintf.h"
 #include "symbolinfo.h"
 #include <process.h>
 #include <iostream>
@@ -300,7 +301,11 @@ bool Profiler::sampleTarget(SAMPLE_TYPE timeSpent, SymbolInfo *syminfo)
 	}
 
 	if (!ResumeThread(target_thread))
-		throw ProfilerExcep(L"ResumeThread failed.");
+	{
+		int err = GetLastError();
+		if( err != ERROR_INVALID_ADDRESS ) // thread has most likely exited
+			throw ProfilerExcep(L"ResumeThread failed.");
+	}
 
 	//NOTE: this has to go after ResumeThread.  Otherwise mem allocation needed by std::map
 	//may hit a lock held by the suspended thread.
