@@ -175,7 +175,7 @@ void CallstackView::updateList()
 		now = callstacks[callstackActive];
 	if(now) {
 		double totalcount = database->getMainList().totalcount;
-		toolRange->SetLabel(wxString::Format("Call stack %d of %d | Accounted for %0.2fs (%0.2f%%)",
+		toolRange->SetLabel(wxString::Format("Call stack %d of %d | Accounted for %0.6fs (%0.6f%%)",
 			(int)(callstackActive+1),(int)callstacks.size(),now->samplecount,now->samplecount*100/totalcount));
 	} else {
 		toolRange->SetLabel("");

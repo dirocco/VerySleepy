@@ -45,7 +45,8 @@ ProfilerThread::ProfilerThread(HANDLE target_process_, const std::vector<HANDLE>
 	sym_info(sym_info_)
 {
 	// DE: 20090325: Profiler has a list of threads to profile, one Profiler instance per thread
-	profilers.reserve(target_threads.size());
+	//profilers.reserve(target_threads.size());
+	profilers.reserve(100);
 	for(std::vector<HANDLE>::const_iterator it = target_threads.begin(); it != target_threads.end(); ++it){
 		profilers.push_back(Profiler(target_process_, *it, callstacks, flatcounts));
 	}
@@ -160,15 +161,21 @@ void ProfilerThread::sampleLoop()
 		int ms = 100 / prefs.throttle;
 		Sleep(ms);
 
-		ScopedLock l(profilersLock);
-
 		QueryPerformanceCounter(&now);
+
+		if( !TryEnterCriticalSection(&profilersLock) )
+		{
+			Sleep(ms);
+			prev = now;
+			continue;
+		}
 
 		__int64 diff = now.QuadPart - prev.QuadPart;
 		double t = (double)diff / (double)freq.QuadPart;
 
 		sample(t);
 		
+		LeaveCriticalSection(&profilersLock);
 		prev = now;
 	}
 }

@@ -390,7 +390,7 @@ bool ProfilerGUI::LaunchProfiler(const AttachInfo *info, std::wstring &output_fi
 		while(captureWin->UpdateProgress(profilerthread->getSampleProgress(), profilerthread->getNumThreadsRunning()))
 		{
 			Sleep(100);
-			profilerthread->setPaused(captureWin->Paused());
+			//profilerthread->setPaused(captureWin->Paused());
 			
 			if (profilerthread->getNumThreadsRunning() <= 0)
 				break;

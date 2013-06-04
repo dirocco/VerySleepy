@@ -224,12 +224,12 @@ void ProcList::showList(int highlight)
 		if(sym->isCollapseFunction || sym->isCollapseModule) {
 			SetItemTextColour(c,wxColor(0,128,0));
 		}
-		setColumnValue(c, COL_EXCLUSIVE,	wxString::Format("%0.2fs",exclusive));
-		setColumnValue(c, COL_INCLUSIVE,	wxString::Format("%0.2fs",inclusive));
-		setColumnValue(c, COL_EXCLUSIVEPCT,	wxString::Format("%0.2f%%",exclusivepercent));
-		setColumnValue(c, COL_INCLUSIVEPCT,	wxString::Format("%0.2f%%",inclusivepercent));
-		setColumnValue(c, COL_SAMPLES,		wxString::Format("%0.2fs",exclusive));
-		setColumnValue(c, COL_CALLSPCT,		wxString::Format("%0.2f%%",exclusivepercent));
+		setColumnValue(c, COL_EXCLUSIVE,	wxString::Format("%0.6fs",exclusive));
+		setColumnValue(c, COL_INCLUSIVE,	wxString::Format("%0.6fs",inclusive));
+		setColumnValue(c, COL_EXCLUSIVEPCT,	wxString::Format("%0.6f%%",exclusivepercent));
+		setColumnValue(c, COL_INCLUSIVEPCT,	wxString::Format("%0.6f%%",inclusivepercent));
+		setColumnValue(c, COL_SAMPLES,		wxString::Format("%0.6fs",exclusive));
+		setColumnValue(c, COL_CALLSPCT,		wxString::Format("%0.6f%%",exclusivepercent));
 		setColumnValue(c, COL_MODULE,		sym->module.c_str());
 		setColumnValue(c, COL_SOURCEFILE,	sym->sourcefile.c_str());
 		setColumnValue(c, COL_SOURCELINE,	::toString(sym->sourceline).c_str());

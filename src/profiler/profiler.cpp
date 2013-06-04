@@ -303,7 +303,9 @@ bool Profiler::sampleTarget(SAMPLE_TYPE timeSpent, SymbolInfo *syminfo)
 	if (!ResumeThread(target_thread))
 	{
 		int err = GetLastError();
-		if( err != ERROR_INVALID_ADDRESS ) // thread has most likely exited
+		if( !err )
+			return true; 
+		else if( err != ERROR_INVALID_ADDRESS ) // thread has most likely exited
 			throw ProfilerExcep(L"ResumeThread failed.");
 	}
 
